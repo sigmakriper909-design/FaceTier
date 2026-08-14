@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>FaceTier</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    :root {
+      --bg: #0a0a0f;
+      --card: #12121a;
+      --border: #1e1e2a;
+      --accent: #7c5cff;
+      --accent2: #00d4ff;
+      --text: #f0f0f5;
+      --muted: #8b8b9a;
+      --success: #22c55e;
+      --danger: #ef4444;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    .container {
+      max-width: 480px;
+      margin: 0 auto;
+      padding: 20px 16px 40px;
+    }
+
+    /* Header */
+    .header {
+      text-align: center;
+      padding: 24px 0 32px;
+    }
+
+    .logo {
+      font-size: 28px;
+      font-weight: 700;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      letter-spacing: -0.5px;
+    }
+
+    .subtitle {
+      color: var(--muted);
+      font-size: 14px;
+      margin-top: 6px;
+    }
+
+    /* Cards */
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 20px;
+      margin-bottom: 16px;
+    }
+
+    .card-title {
+      font-size: 15px;
+      font-weight: 600;
+      margin-bottom: 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* Form */
+    label {
+      display: block;
+      font-size: 13px;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+
+    select, input[type="number"] {
+      width: 100%;
+      background: #0d0d14;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px 14px;
+      color: var(--text);
+      font-size: 15px;
+      outline: none;
+      margin-bottom: 14px;
+    }
+
+    select:focus, input:focus {
+      border-color: var(--accent);
+    }
+
+    /* Upload zones */
+    .upload-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .upload-box {
+      aspect-ratio: 3/4;
+      background: #0d0d14;
+      border: 2px dashed var(--border);
+      border-radius: 14px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.2s;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .upload-box:hover, .upload-box.dragover {
+      border-color: var(--accent);
+      background: rgba(124, 92, 255, 0.05);
+    }
+
+    .upload-box.has-image {
+      border-style: solid;
+      border-color: var(--accent);
+    }
+
+    .upload-box img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      position: absolute;
+      inset: 0;
+    }
+
+    .upload-icon {
+      font-size: 28px;
+      margin-bottom: 8px;
+      opacity: 0.6;
+    }
+
+    .upload-label {
+      font-size: 12px;
+      color: var(--muted);
+      text-align: center;
+      padding: 0 8px;
+    }
+
+    .upload-box input {
+      display: none;
+    }
+
+    /* Buttons */
+    .btn {
+      width: 100%;
+      padding: 16px;
+      border: none;
+      border-radius: 14px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, var(--accent), #5b3fd4);
+      color: white;
+      margin-top: 8px;
+    }
+
+    .btn-primary:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    .btn-primary:not(:disabled):active {
+      transform: scale(0.98);
+    }
+
+    /* Results */
+    .score-big {
+      font-size: 48px;
+      font-weight: 700;
+      text-align: center;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .score-label {
+      text-align: center;
+      color: var(--muted);
+      font-size: 13px;
+      margin-top: -4px;
+      margin-bottom: 20px;
+    }
+
+    .zone-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .zone-row:last-child {
+      border-bottom: none;
+    }
+
+    .zone-name {
+      font-size: 14px;
+    }
+
+    .zone-scores {
+      display: flex;
+      gap: 12px;
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    .score-current {
+      color: var(--text);
+    }
+
+    .score-potential {
+      color: var(--accent2);
+    }
+
+    .priority-item {
+      padding: 10px 0;
+      font-size: 14px;
+      color: var(--muted);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .priority-item:last-child {
+      border-bottom: none;
+    }
+
+    .demo-badge {
+      display: inline-block;
+      background: rgba(124, 92, 255, 0.15);
+      color: var(--accent);
+      font-size: 11px;
+      padding: 4px 8px;
+      border-radius: 6px;
+      margin-bottom: 12px;
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    .loader {
+      text-align: center;
+      padding: 40px 20px;
+    }
+
+    .spinner {
+      width: 40px;
+      height: 40px;
+      border: 3px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin: 0 auto 16px;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .hint {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 8px;
+      line-height: 1.4;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- HEADER -->
+    <div class="header">
+      <div class="logo">FaceTier</div>
+      <div class="subtitle">Жёсткий разбор лица</div>
+    </div>
+
+    <!-- STEP 1: FORM -->
+    <div id="step-form">
+      <div class="card">
+        <div class="card-title">Данные</div>
+        <label>Пол</label>
+        <select id="gender">
+          <option value="">Выбери пол</option>
+          <option value="male">Мужской</option>
+          <option value="female">Женский</option>
+        </select>
+
+        <label>Возраст (необязательно)</label>
+        <input type="number" id="age" placeholder="Например 19" min="14" max="50" />
+      </div>
+
+      <div class="card">
+        <div class="card-title">Фото</div>
+        <div class="upload-grid">
+          <div class="upload-box" id="front-box" onclick="document.getElementById('front-input').click()">
+            <input type="file" id="front-input" accept="image/*" capture="user" />
+            <div class="upload-icon">👤</div>
+            <div class="upload-label">Анфас<br/>(прямо)</div>
+          </div>
+          <div class="upload-box" id="profile-box" onclick="document.getElementById('profile-input').click()">
+            <input type="file" id="profile-input" accept="image/*" />
+            <div class="upload-icon">↔️</div>
+            <div class="upload-label">Профиль<br/>(бок)</div>
+          </div>
+        </div>
+        <p class="hint">
+          Лучше без фильтров и сильного макияжа. Хорошее освещение = точнее разбор.
+        </p>
+      </div>
+
+      <button class="btn btn-primary" id="analyze-btn" disabled onclick="startAnalyze()">
+        Получить разбор
+      </button>
+    </div>
+
+    <!-- STEP 2: LOADING -->
+    <div id="step-loading" class="hidden">
+      <div class="loader">
+        <div class="spinner"></div>
+        <div>Анализируем лицо...</div>
+        <div class="hint" style="margin-top:12px">Обычно занимает несколько секунд</div>
+      </div>
+    </div>
+
+    <!-- STEP 3: RESULT -->
+    <div id="step-result" class="hidden">
+      <div class="card" style="text-align:center">
+        <div class="demo-badge">ДЕМО • один параметр полностью</div>
+        <div class="score-big" id="overall-score">—</div>
+        <div class="score-label">Общая оценка / 10</div>
+        <div style="font-size:13px;color:var(--muted)">
+          Потенциал: <span id="potential-score" style="color:var(--accent2);font-weight:600">—</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">🔥 Canthal Tilt (демо)</div>
+        <div id="demo-content"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Оценки по зонам</div>
+        <div id="zones-list"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Приоритеты прокачки</div>
+        <div id="priorities-list"></div>
+      </div>
+
+      <button class="btn btn-primary" onclick="resetForm()" style="margin-top:8px;background:#1e1e2a">
+        Новый разбор
+      </button>
+    </div>
+  </div>
+
+  <script>
+    const tg = window.Telegram?.WebApp;
+    if (tg) {
+      tg.ready();
+      tg.expand();
+      tg.setHeaderColor('#0a0a0f');
+      tg.setBackgroundColor('#0a0a0f');
+    }
+
+    let frontFile = null;
+    let profileFile = null;
+
+    // Preview helpers
+    function setupUpload(inputId, boxId, setter) {
+      const input = document.getElementById(inputId);
+      const box = document.getElementById(boxId);
+
+      input.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        setter(file);
+        const url = URL.createObjectURL(file);
+        box.innerHTML = `<img src="${url}" alt="preview" />`;
+        box.classList.add('has-image');
+        checkReady();
+      });
+    }
+
+    setupUpload('front-input', 'front-box', (f) => frontFile = f);
+    setupUpload('profile-input', 'profile-box', (f) => profileFile = f);
+
+    function checkReady() {
+      const gender = document.getElementById('gender').value;
+      const btn = document.getElementById('analyze-btn');
+      btn.disabled = !(gender && frontFile && profileFile);
+    }
+
+    document.getElementById('gender').addEventListener('change', checkReady);
+
+    async function startAnalyze() {
+      const gender = document.getElementById('gender').value;
+      const age = document.getElementById('age').value || null;
+
+      document.getElementById('step-form').classList.add('hidden');
+      document.getElementById('step-loading').classList.remove('hidden');
+
+      const formData = new FormData();
+      formData.append('front', frontFile);
+      formData.append('profile', profileFile);
+      formData.append('gender', gender);
+      if (age) formData.append('age', age);
+
+      try {
+        // Пока API на том же origin (когда задеплоим вместе)
+        // Для разработки можно заменить на полный URL бэкенда
+        const res = await fetch('/api/analyze', {
+          method: 'POST',
+          body: formData
+        });
+
+        if (!res.ok) throw new Error('Ошибка сервера');
+
+        const data = await res.json();
+        showResult(data);
+      } catch (err) {
+        console.error(err);
+        // Для тестирования без бэкенда — показываем фейковый результат
+        showResult({
+          overall_score: 6.4,
+          potential_score: 7.8,
+          demo_parameter: {
+            name_ru: "Кантальный наклон",
+            score: 7.2,
+            potential: 8.5,
+            value: "+4.1°",
+            description: "Положительный кантальный наклон. Глаза выглядят более открытыми и «хищными».",
+            advice: [
+              "Хороший показатель. Можно дополнительно подчеркнуть взгляд правильной формой бровей.",
+              "Избегай сильной усталости — она визуально опускает внешние уголки глаз."
+            ]
+          },
+          zones: [
+            {name: "Глаза", score: 7.1, potential: 8.3},
+            {name: "Midface", score: 6.0, potential: 7.5},
+            {name: "Челюсть", score: 5.8, potential: 7.9},
+            {name: "Скулы", score: 6.5, potential: 7.8},
+            {name: "Подбородок", score: 6.2, potential: 7.4},
+            {name: "Симметрия", score: 7.0, potential: 7.6},
+            {name: "Гармония", score: 6.3, potential: 7.7}
+          ],
+          priorities: [
+            "Челюсть и gonial angle — наибольший потенциал роста",
+            "Midface ratio — стоит уделить внимание",
+            "Общая гармония лица"
+          ]
+        });
+      }
+    }
+
+    function showResult(data) {
+      document.getElementById('step-loading').classList.add('hidden');
+      document.getElementById('step-result').classList.remove('hidden');
+
+      document.getElementById('overall-score').textContent = data.overall_score.toFixed(1);
+      document.getElementById('potential-score').textContent = data.potential_score.toFixed(1);
+
+      // Demo parameter
+      const demo = data.demo_parameter;
+      document.getElementById('demo-content').innerHTML = `
+        <div style="font-size:24px;font-weight:700;margin-bottom:4px">${demo.score.toFixed(1)} <span style="font-size:14px;color:var(--muted)">/ 10</span></div>
+        <div style="color:var(--accent2);font-size:13px;margin-bottom:12px">Потенциал: ${demo.potential.toFixed(1)} · Значение: ${demo.value}</div>
+        <p style="font-size:14px;line-height:1.5;margin-bottom:12px">${demo.description}</p>
+        <div style="font-size:13px;color:var(--muted)">
+          ${demo.advice.map(a => `• ${a}`).join('<br/>')}
+        </div>
+      `;
+
+      // Zones
+      document.getElementById('zones-list').innerHTML = data.zones.map(z => `
+        <div class="zone-row">
+          <div class="zone-name">${z.name}</div>
+          <div class="zone-scores">
+            <span class="score-current">${z.score.toFixed(1)}</span>
+            <span class="score-potential">→ ${z.potential.toFixed(1)}</span>
+          </div>
+        </div>
+      `).join('');
+
+      // Priorities
+      document.getElementById('priorities-list').innerHTML = data.priorities.map(p => `
+        <div class="priority-item">→ ${p}</div>
+      `).join('');
+
+      if (tg) tg.HapticFeedback?.notificationOccurred('success');
+    }
+
+    function resetForm() {
+      frontFile = null;
+      profileFile = null;
+      document.getElementById('gender').value = '';
+      document.getElementById('age').value = '';
+      document.getElementById('front-box').innerHTML = `<div class="upload-icon">👤</div><div class="upload-label">Анфас<br/>(прямо)</div>`;
+      document.getElementById('profile-box').innerHTML = `<div class="upload-icon">↔️</div><div class="upload-label">Профиль<br/>(бок)</div>`;
+      document.getElementById('front-box').classList.remove('has-image');
+      document.getElementById('profile-box').classList.remove('has-image');
+      document.getElementById('analyze-btn').disabled = true;
+
+      document.getElementById('step-result').classList.add('hidden');
+      document.getElementById('step-form').classList.remove('hidden');
+    }
+  </script>
+</body>
+</html>
