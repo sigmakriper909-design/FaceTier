@@ -1,8 +1,9 @@
 """
 FaceTier — анализатор лица на MediaPipe Face Mesh.
+Считает метрики looksmaxxing-стиля и отдаёт нормализованные точки для оверлеев.
 """
 
-from typing import Dict, Any, Optional, Tuple
+from typing import Dict, Any, Optional, Tuple, List
 import numpy as np
 
 MP_AVAILABLE = False
@@ -52,10 +53,12 @@ class FaceAnalyzer:
             raise ValueError("Лицо на анфасе не найдено. Сфотографируй лицо прямо и при хорошем освещении.")
 
         landmarks = results.multi_face_landmarks[0]
-        points = {i: (lm.x * w, lm.y * h) for i, lm in enumerate(landmarks.landmark)}
+        pts_n = {i: (lm.x, lm.y) for i, lm in enumerate(landmarks.landmark)}
+        pts_px = {i: (lm.x * w, lm.y * h) for i, lm in enumerate(landmarks.landmark)}
 
-        metrics = self._compute_metrics(points, w, h)
+        metrics = self._compute_metrics(pts_px, w, h)
         scores = self._metrics_to_scores(metrics, gender)
+        overlays = self._build_overlays(pts_n)
 
         overall = round(float(np.mean(list(scores.values()))), 1)
         potential = round(min(9.5, overall + 1.3), 1)
@@ -63,6 +66,7 @@ class FaceAnalyzer:
         return {
             "metrics": metrics,
             "scores": scores,
+            "overlays": overlays,
             "overall_score": overall,
             "potential_score": potential,
             "mp_available": True,
@@ -70,6 +74,71 @@ class FaceAnalyzer:
 
     def _dist(self, p1, p2) -> float:
         return float(np.linalg.norm(np.array(p1) - np.array(p2)))
+
+    def _n(self, pts: Dict, idx: int) -> Optional[List[float]]:
+        p = pts.get(idx)
+        if p is None:
+            return None
+        return [round(float(p[0]), 4), round(float(p[1]), 4)]
+
+    def _pts(self, pts: Dict, ids: List[int]) -> List[List[float]]:
+        out = []
+        for i in ids:
+            p = self._n(pts, i)
+            if p:
+                out.append(p)
+        return out
+
+    def _build_overlays(self, pts: Dict) -> Dict[str, Any]:
+        eyes_pts = self._pts(pts, [33, 133, 263, 362, 468, 473, 70, 300])
+        midface_pts = self._pts(pts, [10, 1, 13, 14, 234, 454, 133, 362])
+        jaw_pts = self._pts(pts, [172, 136, 150, 149, 176, 148, 152, 377, 400, 378, 379, 365, 397])
+        cheek_pts = self._pts(pts, [234, 454, 116, 345])
+        chin_pts = self._pts(pts, [152, 175, 199, 176, 148, 377, 400])
+        face_outline = self._pts(pts, [
+            10, 338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288,
+            397, 365, 379, 378, 400, 377, 152, 148, 176, 149, 150, 136,
+            172, 58, 132, 93, 234, 127, 162, 21, 54, 103, 67, 109
+        ])
+        center_line = self._pts(pts, [10, 1, 13, 14, 152])
+
+        return {
+            "front": {
+                "overall": {"kind": "polyline", "points": face_outline, "color": "#7c5cff"},
+                "eyes": {
+                    "kind": "points+lines",
+                    "points": eyes_pts,
+                    "lines": [self._pts(pts, [33, 133]), self._pts(pts, [263, 362])],
+                    "color": "#00d4aa",
+                },
+                "midface": {
+                    "kind": "points+lines",
+                    "points": midface_pts,
+                    "lines": [self._pts(pts, [133, 362]), self._pts(pts, [10, 152])],
+                    "color": "#7c5cff",
+                },
+                "jaw": {"kind": "polyline", "points": jaw_pts, "color": "#ffb020"},
+                "cheekbones": {
+                    "kind": "points+lines",
+                    "points": cheek_pts,
+                    "lines": [self._pts(pts, [234, 454])],
+                    "color": "#ff5c7a",
+                },
+                "chin": {"kind": "points", "points": chin_pts, "color": "#00d4aa"},
+                "symmetry": {
+                    "kind": "points+lines",
+                    "points": center_line + eyes_pts[:4],
+                    "lines": [center_line, self._pts(pts, [33, 263])],
+                    "color": "#7c5cff",
+                },
+                "harmony": {"kind": "polyline", "points": face_outline, "color": "#00d4aa"},
+            },
+            "profile": {
+                "jaw": {"kind": "note"},
+                "chin": {"kind": "note"},
+                "midface": {"kind": "note"},
+            },
+        }
 
     def _compute_metrics(self, points: Dict[int, Tuple[float, float]], w: int, h: int) -> Dict[str, float]:
         left_inner = points.get(133, (0, 0))
@@ -188,4 +257,5 @@ class FaceAnalyzer:
             "overall_score": 6.3,
             "potential_score": 7.7,
             "mp_available": False,
+            "overlays": {},
         }
