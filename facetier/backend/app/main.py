@@ -1,13 +1,12 @@
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-import os
 import uuid
 import shutil
 from pathlib import Path
 import tempfile
 
-app = FastAPI(title="FaceTier API", version="0.2.0")
+app = FastAPI(title="FaceTier API", version="0.3.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -23,11 +22,7 @@ UPLOAD_DIR.mkdir(exist_ok=True)
 
 @app.get("/")
 async def root():
-    return {
-        "status": "ok",
-        "service": "FaceTier API",
-        "version": "0.2.0"
-    }
+    return {"status": "ok", "service": "FaceTier API", "version": "0.3.0"}
 
 
 @app.get("/health")
@@ -58,7 +53,6 @@ async def analyze_face(
         with open(profile_path, "wb") as f:
             shutil.copyfileobj(profile.file, f)
 
-        # Пытаемся сделать реальный анализ
         try:
             from app.analysis.face_analyzer import FaceAnalyzer
             analyzer = FaceAnalyzer()
@@ -66,7 +60,7 @@ async def analyze_face(
                 str(front_path),
                 str(profile_path),
                 gender=gender,
-                age=age
+                age=age,
             )
             scores = analysis.get("scores", {})
             overall = analysis.get("overall_score", 6.0)
@@ -74,7 +68,9 @@ async def analyze_face(
             metrics = analysis.get("metrics", {})
 
             canthal_score = scores.get("canthal_tilt", 6.5)
-            canthal_value = metrics.get("canthal_tilt", 0)
+            canthal_value = float(metrics.get("canthal_tilt", 0))
+            left_c = metrics.get("left_canthal", 0)
+            right_c = metrics.get("right_canthal", 0)
 
             result = {
                 "session_id": session_id,
@@ -82,14 +78,17 @@ async def analyze_face(
                 "potential_score": potential,
                 "gender": gender,
                 "age": age,
+                "metrics": metrics,
                 "demo_parameter": {
                     "name": "Canthal Tilt",
                     "name_ru": "Кантальный наклон",
                     "score": canthal_score,
                     "potential": min(9.5, canthal_score + 1.2),
                     "value": f"{canthal_value:+.1f}°",
+                    "left": f"{float(left_c):+.1f}°",
+                    "right": f"{float(right_c):+.1f}°",
                     "description": _canthal_description(canthal_value),
-                    "advice": _canthal_advice(canthal_value)
+                    "advice": _canthal_advice(canthal_value),
                 },
                 "zones": [
                     {"id": "eyes", "name": "Глаза", "score": scores.get("eyes", 6.5), "potential": min(9.2, scores.get("eyes", 6.5) + 1.1)},
@@ -101,16 +100,14 @@ async def analyze_face(
                     {"id": "harmony", "name": "Гармония", "score": scores.get("harmony", 6.2), "potential": min(8.6, scores.get("harmony", 6.2) + 1.2)},
                 ],
                 "priorities": _build_priorities(scores),
-                "message": "Анализ выполнен через MediaPipe landmarks"
+                "message": "Анализ выполнен через MediaPipe landmarks",
             }
         except Exception as e:
-            # Если анализ упал — отдаём честную заглушку
             result = _demo_result(session_id, gender, age, error=str(e))
 
         return JSONResponse(result)
 
     finally:
-        # Всегда удаляем фото
         try:
             shutil.rmtree(session_dir, ignore_errors=True)
         except Exception:
@@ -131,16 +128,16 @@ def _canthal_advice(value: float) -> list:
     if value >= 4:
         return [
             "Отличный показатель. Поддерживай его формой бровей и хорошим сном.",
-            "Избегай сильной отёчности — она может визуально снижать эффект."
+            "Избегай сильной отёчности — она может визуально снижать эффект.",
         ]
     if value >= 1:
         return [
             "Хороший базовый уровень. Можно чуть усилить впечатление правильной формой бровей.",
-            "Следи за сном и отёками под глазами."
+            "Следи за сном и отёками под глазами.",
         ]
     return [
         "Есть потенциал. Форма бровей и работа с нижним веком могут визуально улучшить восприятие.",
-        "В долгосрочной перспективе некоторые рассматривают кантопластику, но это уже хирургия."
+        "В долгосрочной перспективе некоторые рассматривают кантопластику, но это уже хирургия.",
     ]
 
 
@@ -170,7 +167,7 @@ def _demo_result(session_id, gender, age, error=None):
             "potential": 8.0,
             "value": "+2.1°",
             "description": "Нейтрально-положительный наклон (демо-режим).",
-            "advice": ["Это демо-результат, потому что анализ не смог выполниться полностью."]
+            "advice": ["Это демо-результат, потому что анализ не смог выполниться полностью."],
         },
         "zones": [
             {"id": "eyes", "name": "Глаза", "score": 6.5, "potential": 8.0},
@@ -184,7 +181,7 @@ def _demo_result(session_id, gender, age, error=None):
         "priorities": [
             "Челюсть — наибольший потенциал улучшения",
             "Midface — стоит уделить внимание",
-            "Гармония лица"
+            "Гармония лица",
         ],
-        "message": f"Демо-режим. Ошибка анализа: {error}" if error else "Демо-режим"
+        "message": f"Демо-режим. Ошибка анализа: {error}" if error else "Демо-режим",
     }
