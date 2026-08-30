@@ -6,7 +6,7 @@ import shutil
 from pathlib import Path
 import tempfile
 
-app = FastAPI(title="FaceTier API", version="0.3.0")
+app = FastAPI(title="FaceTier API", version="0.3.1")
 
 app.add_middleware(
     CORSMiddleware,
@@ -22,12 +22,38 @@ UPLOAD_DIR.mkdir(exist_ok=True)
 
 @app.get("/")
 async def root():
-    return {"status": "ok", "service": "FaceTier API", "version": "0.3.0"}
+    return {"status": "ok", "service": "FaceTier API", "version": "0.3.1"}
 
 
 @app.get("/health")
 async def health():
     return {"status": "healthy"}
+
+
+@app.get("/debug")
+async def debug():
+    info = {"version": "0.3.1"}
+    try:
+        from app.analysis import face_analyzer as fa
+        info["mp_available"] = fa.MP_AVAILABLE
+        info["mp_import_error"] = fa.MP_IMPORT_ERROR
+        info["cv2"] = True
+    except Exception as e:
+        info["mp_available"] = False
+        info["mp_import_error"] = str(e)
+        info["cv2"] = False
+    try:
+        import mediapipe
+        info["mediapipe_version"] = getattr(mediapipe, "__version__", "unknown")
+    except Exception as e:
+        info["mediapipe_version"] = None
+        info["mediapipe_error"] = str(e)
+    try:
+        import cv2
+        info["cv2_version"] = cv2.__version__
+    except Exception as e:
+        info["cv2_error"] = str(e)
+    return info
 
 
 @app.post("/api/analyze")
@@ -66,11 +92,15 @@ async def analyze_face(
             overall = analysis.get("overall_score", 6.0)
             potential = analysis.get("potential_score", 7.5)
             metrics = analysis.get("metrics", {})
+            mp_ok = analysis.get("mp_available", False)
+            warning = analysis.get("warning")
 
             canthal_score = scores.get("canthal_tilt", 6.5)
             canthal_value = float(metrics.get("canthal_tilt", 0))
             left_c = metrics.get("left_canthal", 0)
             right_c = metrics.get("right_canthal", 0)
+
+            msg = "Анализ выполнен через MediaPipe landmarks" if mp_ok else f"Демо-режим: {warning or 'MediaPipe недоступен'}"
 
             result = {
                 "session_id": session_id,
@@ -78,6 +108,7 @@ async def analyze_face(
                 "potential_score": potential,
                 "gender": gender,
                 "age": age,
+                "mp_available": mp_ok,
                 "metrics": metrics,
                 "demo_parameter": {
                     "name": "Canthal Tilt",
@@ -100,8 +131,10 @@ async def analyze_face(
                     {"id": "harmony", "name": "Гармония", "score": scores.get("harmony", 6.2), "potential": min(8.6, scores.get("harmony", 6.2) + 1.2)},
                 ],
                 "priorities": _build_priorities(scores),
-                "message": "Анализ выполнен через MediaPipe landmarks",
+                "message": msg,
             }
+            if warning:
+                result["warning"] = warning
         except Exception as e:
             result = _demo_result(session_id, gender, age, error=str(e))
 
@@ -160,6 +193,7 @@ def _demo_result(session_id, gender, age, error=None):
         "potential_score": 7.7,
         "gender": gender,
         "age": age,
+        "mp_available": False,
         "demo_parameter": {
             "name": "Canthal Tilt",
             "name_ru": "Кантальный наклон",
