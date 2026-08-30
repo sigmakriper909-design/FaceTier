@@ -1,15 +1,13 @@
 """
-FaceTier — базовый анализатор лица.
-
-На первом этапе используем MediaPipe Face Mesh для получения landmarks,
-потом считаем ключевые метрики looksmaxxing-стиля.
+FaceTier — анализатор лица на MediaPipe Face Mesh.
+Считает canthal tilt, midface, симметрию и другие метрики в стиле looksmaxxing.
 """
 
 from typing import Dict, Any, Optional, Tuple
 import numpy as np
-import cv2
 
 try:
+    import cv2
     import mediapipe as mp
     MP_AVAILABLE = True
 except ImportError:
@@ -18,20 +16,22 @@ except ImportError:
 
 class FaceAnalyzer:
     def __init__(self):
-        self.mp_face_mesh = None
+        self.face_mesh = None
         if MP_AVAILABLE:
-            self.mp_face_mesh = mp.solutions.face_mesh.FaceMesh(
+            self.face_mesh = mp.solutions.face_mesh.FaceMesh(
                 static_image_mode=True,
                 max_num_faces=1,
                 refine_landmarks=True,
-                min_detection_confidence=0.5
+                min_detection_confidence=0.5,
             )
 
-    def analyze(self, front_path: str, profile_path: Optional[str] = None,
-                gender: str = "male", age: Optional[int] = None) -> Dict[str, Any]:
-        """
-        Главный метод. Возвращает словарь с оценками.
-        """
+    def analyze(
+        self,
+        front_path: str,
+        profile_path: Optional[str] = None,
+        gender: str = "male",
+        age: Optional[int] = None,
+    ) -> Dict[str, Any]:
         if not MP_AVAILABLE:
             return self._fallback_result(gender)
 
@@ -39,45 +39,33 @@ class FaceAnalyzer:
         if front_img is None:
             raise ValueError("Не удалось прочитать фото анфаса")
 
-        front_rgb = cv2.cvtColor(front_img, cv2.COLOR_BGR2RGB)
-        results = self.mp_face_mesh.process(front_rgb)
+        h, w = front_img.shape[:2]
+        rgb = cv2.cvtColor(front_img, cv2.COLOR_BGR2RGB)
+        results = self.face_mesh.process(rgb)
 
         if not results.multi_face_landmarks:
-            raise ValueError("Лицо на анфасе не найдено. Попробуй другое фото.")
+            raise ValueError("Лицо на анфасе не найдено. Сфотографируй лицо прямо и при хорошем освещении.")
 
         landmarks = results.multi_face_landmarks[0]
-        h, w = front_img.shape[:2]
+        points = {i: (lm.x * w, lm.y * h) for i, lm in enumerate(landmarks.landmark)}
 
-        # Конвертируем в пиксельные координаты
-        points = {}
-        for idx, lm in enumerate(landmarks.landmark):
-            points[idx] = (lm.x * w, lm.y * h)
-
-        # Считаем базовые метрики
         metrics = self._compute_metrics(points, w, h)
-
-        # Переводим метрики в оценки 0-10
         scores = self._metrics_to_scores(metrics, gender)
+
+        overall = round(float(np.mean(list(scores.values()))), 1)
+        potential = round(min(9.5, overall + 1.3), 1)
 
         return {
             "metrics": metrics,
             "scores": scores,
-            "overall_score": round(sum(scores.values()) / len(scores), 1),
-            "potential_score": round(min(9.5, scores.get("overall", 6) + 1.4), 1),
+            "overall_score": overall,
+            "potential_score": potential,
         }
 
+    def _dist(self, p1, p2) -> float:
+        return float(np.linalg.norm(np.array(p1) - np.array(p2)))
+
     def _compute_metrics(self, points: Dict[int, Tuple[float, float]], w: int, h: int) -> Dict[str, float]:
-        """Считаем ключевые геометрические метрики."""
-        # Важные индексы MediaPipe Face Mesh
-        # Левый глаз: 33 (внешний), 133 (внутренний)
-        # Правый глаз: 263 (внешний), 362 (внутренний)
-        # и т.д.
-
-        def dist(a, b):
-            return np.linalg.norm(np.array(points[a]) - np.array(points[b]))
-
-        # Canthal tilt (упрощённо)
-        # Левый глаз: внешний угол выше/ниже внутреннего
         left_outer = points.get(33, (0, 0))
         left_inner = points.get(133, (0, 0))
         right_outer = points.get(263, (0, 0))
@@ -86,50 +74,97 @@ class FaceAnalyzer:
         def canthal_angle(outer, inner):
             dx = outer[0] - inner[0]
             dy = outer[1] - inner[1]
-            if dx == 0:
+            if abs(dx) < 1e-6:
                 return 0.0
-            angle = np.degrees(np.arctan2(-dy, dx))  # -dy потому что y растёт вниз
-            return angle
+            return float(np.degrees(np.arctan2(-dy, dx)))
 
         left_tilt = canthal_angle(left_outer, left_inner)
         right_tilt = canthal_angle(right_outer, right_inner)
-        avg_canthal = (left_tilt + right_tilt) / 2
+        avg_canthal = (left_tilt - right_tilt) / 2.0
 
-        # Межзрачковое расстояние / ширина лица (очень грубо)
-        # Используем приблизительные точки
+        left_eye_c = points.get(468, left_inner) if 468 in points else left_inner
+        right_eye_c = points.get(473, right_inner) if 473 in points else right_inner
+        ipd = self._dist(left_eye_c, right_eye_c)
+
+        top = points.get(10, (w / 2, 0))
+        chin = points.get(152, (w / 2, h))
+        face_height = max(1.0, abs(chin[1] - top[1]))
+
+        eye_y = (left_inner[1] + right_inner[1]) / 2
+        mouth_top = points.get(13, (w / 2, h * 0.7))
+        midface_len = abs(mouth_top[1] - eye_y)
+        midface_ratio = ipd / max(1.0, midface_len)
+
+        left_jaw = points.get(172, points.get(234, (0, h * 0.7)))
+        right_jaw = points.get(397, points.get(454, (w, h * 0.7)))
+        jaw_width = self._dist(left_jaw, right_jaw)
+
+        left_cheek = points.get(234, left_jaw)
+        right_cheek = points.get(454, right_jaw)
+        bizygomatic = self._dist(left_cheek, right_cheek)
+
+        jaw_to_cheek = jaw_width / max(1.0, bizygomatic)
+
+        symmetry_err = abs(left_tilt + right_tilt) + abs(left_outer[1] - right_outer[1]) / h * 100
 
         return {
             "canthal_tilt": round(avg_canthal, 2),
             "left_canthal": round(left_tilt, 2),
             "right_canthal": round(right_tilt, 2),
+            "midface_ratio": round(midface_ratio, 3),
+            "jaw_to_cheek": round(jaw_to_cheek, 3),
+            "symmetry_error": round(symmetry_err, 2),
+            "ipd": round(ipd, 1),
+            "face_height": round(face_height, 1),
         }
 
     def _metrics_to_scores(self, metrics: Dict[str, float], gender: str) -> Dict[str, float]:
-        """Переводим сырые метрики в оценки 1-10."""
-        canthal = metrics.get("canthal_tilt", 0)
+        canthal = metrics.get("canthal_tilt", 0.0)
+        midface = metrics.get("midface_ratio", 1.0)
+        jaw_ratio = metrics.get("jaw_to_cheek", 0.85)
+        sym_err = metrics.get("symmetry_error", 5.0)
 
-        # Простая шкала для canthal tilt
-        # Идеал примерно +3° ... +7°
         if 3 <= canthal <= 7:
-            canthal_score = 8.5 + (canthal - 5) * 0.3
+            canthal_score = 8.2 + min(1.3, (canthal - 3) * 0.25)
         elif 0 <= canthal < 3:
-            canthal_score = 6.0 + canthal
+            canthal_score = 5.5 + canthal * 0.9
         elif canthal > 7:
-            canthal_score = max(5.0, 9.0 - (canthal - 7) * 0.5)
-        else:  # отрицательный
-            canthal_score = max(3.0, 6.0 + canthal)
+            canthal_score = max(5.5, 9.0 - (canthal - 7) * 0.4)
+        else:
+            canthal_score = max(2.5, 5.5 + canthal * 0.7)
+        canthal_score = float(np.clip(canthal_score, 1.0, 10.0))
 
-        canthal_score = max(1.0, min(10.0, canthal_score))
+        if 0.95 <= midface <= 1.20:
+            midface_score = 7.5 + (midface - 0.95) * 4
+        elif midface > 1.20:
+            midface_score = max(5.0, 8.5 - (midface - 1.20) * 3)
+        else:
+            midface_score = max(3.5, 5.0 + midface * 2.5)
+        midface_score = float(np.clip(midface_score, 1.0, 10.0))
+
+        ideal_jaw = 0.90 if gender == "male" else 0.82
+        jaw_score = 10.0 - abs(jaw_ratio - ideal_jaw) * 18
+        jaw_score = float(np.clip(jaw_score, 2.0, 9.5))
+
+        sym_score = 9.5 - sym_err * 0.35
+        sym_score = float(np.clip(sym_score, 3.0, 9.8))
+
+        eyes_score = canthal_score * 0.92 + 0.5
+        eyes_score = float(np.clip(eyes_score, 1.0, 10.0))
+
+        cheek_score = float(np.clip(6.5 + (jaw_ratio - 0.8) * 5, 3.0, 9.0))
+        chin_score = float(np.clip(jaw_score * 0.95, 2.5, 9.2))
+        harmony = float(np.mean([canthal_score, midface_score, jaw_score, sym_score]))
 
         return {
             "canthal_tilt": round(canthal_score, 1),
-            "eyes": round(canthal_score * 0.95, 1),
-            "midface": 6.2,
-            "jaw": 5.9,
-            "cheekbones": 6.4,
-            "chin": 6.1,
-            "symmetry": 7.0,
-            "harmony": 6.3,
+            "eyes": round(eyes_score, 1),
+            "midface": round(midface_score, 1),
+            "jaw": round(jaw_score, 1),
+            "cheekbones": round(cheek_score, 1),
+            "chin": round(chin_score, 1),
+            "symmetry": round(sym_score, 1),
+            "harmony": round(harmony, 1),
         }
 
     def _fallback_result(self, gender: str) -> Dict[str, Any]:
@@ -147,11 +182,5 @@ class FaceAnalyzer:
             },
             "overall_score": 6.3,
             "potential_score": 7.7,
-            "warning": "MediaPipe не доступен, использованы заглушки"
+            "warning": "MediaPipe недоступен",
         }
-
-
-# Быстрый тест
-if __name__ == "__main__":
-    analyzer = FaceAnalyzer()
-    print("FaceAnalyzer готов. MediaPipe:", MP_AVAILABLE)
