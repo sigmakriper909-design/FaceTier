@@ -1,6 +1,5 @@
 """
 FaceTier — анализатор лица на MediaPipe Face Mesh.
-Считает canthal tilt, midface, симметрию и другие метрики в стиле looksmaxxing.
 """
 
 from typing import Dict, Any, Optional, Tuple
@@ -66,46 +65,47 @@ class FaceAnalyzer:
         return float(np.linalg.norm(np.array(p1) - np.array(p2)))
 
     def _compute_metrics(self, points: Dict[int, Tuple[float, float]], w: int, h: int) -> Dict[str, float]:
-        left_outer = points.get(33, (0, 0))
         left_inner = points.get(133, (0, 0))
-        right_outer = points.get(263, (0, 0))
+        left_outer = points.get(33, (0, 0))
         right_inner = points.get(362, (0, 0))
+        right_outer = points.get(263, (0, 0))
 
-        def canthal_angle(outer, inner):
+        def eye_canthal(inner, outer):
             dx = outer[0] - inner[0]
             dy = outer[1] - inner[1]
             if abs(dx) < 1e-6:
                 return 0.0
-            return float(np.degrees(np.arctan2(-dy, dx)))
+            return float(np.degrees(np.arctan2(-dy, abs(dx))))
 
-        left_tilt = canthal_angle(left_outer, left_inner)
-        right_tilt = canthal_angle(right_outer, right_inner)
-        avg_canthal = (left_tilt - right_tilt) / 2.0
+        left_tilt = eye_canthal(left_inner, left_outer)
+        right_tilt = eye_canthal(right_inner, right_outer)
+        avg_canthal = (left_tilt + right_tilt) / 2.0
 
-        left_eye_c = points.get(468, left_inner) if 468 in points else left_inner
-        right_eye_c = points.get(473, right_inner) if 473 in points else right_inner
-        ipd = self._dist(left_eye_c, right_eye_c)
+        left_pupil = points.get(468, left_inner)
+        right_pupil = points.get(473, right_inner)
+        ipd = self._dist(left_pupil, right_pupil)
 
-        top = points.get(10, (w / 2, 0))
-        chin = points.get(152, (w / 2, h))
+        top = points.get(10, (w / 2, h * 0.1))
+        chin = points.get(152, (w / 2, h * 0.9))
         face_height = max(1.0, abs(chin[1] - top[1]))
 
-        eye_y = (left_inner[1] + right_inner[1]) / 2
-        mouth_top = points.get(13, (w / 2, h * 0.7))
-        midface_len = abs(mouth_top[1] - eye_y)
-        midface_ratio = ipd / max(1.0, midface_len)
+        eye_y = (left_inner[1] + right_inner[1]) / 2.0
+        mouth = points.get(13, (w / 2, h * 0.65))
+        midface_len = max(1.0, abs(mouth[1] - eye_y))
+        midface_ratio = ipd / midface_len
 
-        left_jaw = points.get(172, points.get(234, (0, h * 0.7)))
-        right_jaw = points.get(397, points.get(454, (w, h * 0.7)))
+        left_jaw = points.get(172, points.get(58, (0, h * 0.75)))
+        right_jaw = points.get(397, points.get(288, (w, h * 0.75)))
         jaw_width = self._dist(left_jaw, right_jaw)
 
         left_cheek = points.get(234, left_jaw)
         right_cheek = points.get(454, right_jaw)
-        bizygomatic = self._dist(left_cheek, right_cheek)
+        bizygomatic = max(1.0, self._dist(left_cheek, right_cheek))
+        jaw_to_cheek = jaw_width / bizygomatic
 
-        jaw_to_cheek = jaw_width / max(1.0, bizygomatic)
-
-        symmetry_err = abs(left_tilt + right_tilt) + abs(left_outer[1] - right_outer[1]) / h * 100
+        sym_y = abs(left_outer[1] - right_outer[1]) / max(1.0, h) * 100
+        sym_tilt = abs(left_tilt - right_tilt)
+        symmetry_err = sym_y + sym_tilt
 
         return {
             "canthal_tilt": round(avg_canthal, 2),
@@ -125,34 +125,32 @@ class FaceAnalyzer:
         sym_err = metrics.get("symmetry_error", 5.0)
 
         if 3 <= canthal <= 7:
-            canthal_score = 8.2 + min(1.3, (canthal - 3) * 0.25)
-        elif 0 <= canthal < 3:
-            canthal_score = 5.5 + canthal * 0.9
+            canthal_score = 8.0 + min(1.5, (canthal - 3) * 0.3)
+        elif 1 <= canthal < 3:
+            canthal_score = 6.0 + (canthal - 1) * 1.0
         elif canthal > 7:
-            canthal_score = max(5.5, 9.0 - (canthal - 7) * 0.4)
+            canthal_score = max(5.5, 9.2 - (canthal - 7) * 0.4)
         else:
-            canthal_score = max(2.5, 5.5 + canthal * 0.7)
+            canthal_score = max(2.0, 5.5 + canthal * 0.8)
         canthal_score = float(np.clip(canthal_score, 1.0, 10.0))
 
-        if 0.95 <= midface <= 1.20:
-            midface_score = 7.5 + (midface - 0.95) * 4
-        elif midface > 1.20:
-            midface_score = max(5.0, 8.5 - (midface - 1.20) * 3)
+        if 0.95 <= midface <= 1.25:
+            midface_score = 7.2 + (midface - 0.95) * 5
+        elif midface > 1.25:
+            midface_score = max(4.5, 8.5 - (midface - 1.25) * 4)
         else:
-            midface_score = max(3.5, 5.0 + midface * 2.5)
+            midface_score = max(3.0, 4.5 + midface * 3)
         midface_score = float(np.clip(midface_score, 1.0, 10.0))
 
-        ideal_jaw = 0.90 if gender == "male" else 0.82
-        jaw_score = 10.0 - abs(jaw_ratio - ideal_jaw) * 18
+        ideal_jaw = 0.92 if gender == "male" else 0.84
+        jaw_score = 9.5 - abs(jaw_ratio - ideal_jaw) * 16
         jaw_score = float(np.clip(jaw_score, 2.0, 9.5))
 
-        sym_score = 9.5 - sym_err * 0.35
+        sym_score = 9.5 - sym_err * 0.4
         sym_score = float(np.clip(sym_score, 3.0, 9.8))
 
-        eyes_score = canthal_score * 0.92 + 0.5
-        eyes_score = float(np.clip(eyes_score, 1.0, 10.0))
-
-        cheek_score = float(np.clip(6.5 + (jaw_ratio - 0.8) * 5, 3.0, 9.0))
+        eyes_score = float(np.clip(canthal_score * 0.9 + 0.6, 1.0, 10.0))
+        cheek_score = float(np.clip(6.2 + (jaw_ratio - 0.8) * 6, 3.0, 9.2))
         chin_score = float(np.clip(jaw_score * 0.95, 2.5, 9.2))
         harmony = float(np.mean([canthal_score, midface_score, jaw_score, sym_score]))
 
