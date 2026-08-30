@@ -5,12 +5,15 @@ FaceTier — анализатор лица на MediaPipe Face Mesh.
 from typing import Dict, Any, Optional, Tuple
 import numpy as np
 
+MP_AVAILABLE = False
+MP_IMPORT_ERROR = None
+
 try:
     import cv2
     import mediapipe as mp
     MP_AVAILABLE = True
-except ImportError:
-    MP_AVAILABLE = False
+except Exception as e:
+    MP_IMPORT_ERROR = f"{type(e).__name__}: {e}"
 
 
 class FaceAnalyzer:
@@ -32,7 +35,10 @@ class FaceAnalyzer:
         age: Optional[int] = None,
     ) -> Dict[str, Any]:
         if not MP_AVAILABLE:
-            return self._fallback_result(gender)
+            result = self._fallback_result(gender)
+            result["warning"] = f"MediaPipe недоступен: {MP_IMPORT_ERROR}"
+            result["mp_available"] = False
+            return result
 
         front_img = cv2.imread(front_path)
         if front_img is None:
@@ -59,6 +65,7 @@ class FaceAnalyzer:
             "scores": scores,
             "overall_score": overall,
             "potential_score": potential,
+            "mp_available": True,
         }
 
     def _dist(self, p1, p2) -> float:
@@ -180,5 +187,5 @@ class FaceAnalyzer:
             },
             "overall_score": 6.3,
             "potential_score": 7.7,
-            "warning": "MediaPipe недоступен",
+            "mp_available": False,
         }
