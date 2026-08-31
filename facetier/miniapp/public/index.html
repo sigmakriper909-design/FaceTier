@@ -1,1 +1,155 @@
-PLACEHOLDER
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
+<title>FaceTier</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+:root{--bg:#0a0a0f;--card:#12121a;--border:#1e1e2a;--text:#f0f0f5;--muted:#8b8b9e;--accent:#7c5cff;--accent2:#00d4aa;--danger:#ff5c7a;--warn:#ffb020}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;padding:16px;padding-bottom:24px;overflow-x:hidden}
+.container{max-width:420px;margin:0 auto}
+.header{text-align:center;margin-bottom:16px}
+.logo{font-size:26px;font-weight:800;background:linear-gradient(135deg,var(--accent),var(--accent2));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.subtitle{color:var(--muted);font-size:13px;margin-top:4px}
+.card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:16px;margin-bottom:12px}
+.card-title{font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px}
+label{display:block;font-size:13px;color:var(--muted);margin-bottom:6px}
+select,input[type=number]{width:100%;background:#0e0e16;border:1px solid var(--border);border-radius:10px;padding:12px;color:var(--text);font-size:15px;margin-bottom:12px;outline:none}
+select:focus,input:focus{border-color:var(--accent)}
+.upload-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
+.upload-box{aspect-ratio:3/4;border:1.5px dashed var(--border);border-radius:14px;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;position:relative;overflow:hidden;background:#0e0e16}
+.upload-box.has-image{border-style:solid;border-color:var(--accent)}
+.upload-box img{width:100%;height:100%;object-fit:cover;position:absolute;inset:0}
+.upload-icon{font-size:28px;margin-bottom:6px}
+.upload-label{font-size:12px;color:var(--muted);text-align:center;line-height:1.3}
+.btn{width:100%;border:none;border-radius:12px;padding:14px;font-size:15px;font-weight:600;cursor:pointer}
+.btn-primary{background:linear-gradient(135deg,var(--accent),#5a3fd4);color:#fff}
+.btn-primary:disabled{opacity:.4;cursor:not-allowed}
+.btn-ghost{background:#1e1e2a;color:var(--text)}
+.btn-nav{flex:1;background:#1a1a24;color:var(--text);border:1px solid var(--border);border-radius:12px;padding:12px;font-size:14px;font-weight:600;cursor:pointer}
+.btn-nav:disabled{opacity:.35;cursor:not-allowed}
+.hidden{display:none!important}
+.hint{font-size:12px;color:var(--muted);line-height:1.4;margin-bottom:12px}
+.spinner{width:44px;height:44px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .9s linear infinite;margin:0 auto 16px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.load-title{font-weight:700;font-size:16px;margin-bottom:8px}
+.load-hint{font-size:13px;color:var(--muted);line-height:1.5;margin-bottom:18px}
+.load-stages{text-align:left;max-width:280px;margin:0 auto}
+.load-stage{font-size:13px;color:var(--muted);padding:6px 0;display:flex;align-items:center;gap:8px;transition:color .3s}
+.load-stage.active{color:var(--text)}
+.load-stage.done{color:var(--accent2)}
+.load-stage .dot-s{width:8px;height:8px;border-radius:50%;background:#2a2a38;flex-shrink:0}
+.load-stage.active .dot-s{background:var(--accent);box-shadow:0 0 8px rgba(124,92,255,.5)}
+.load-stage.done .dot-s{background:var(--accent2)}
+.progress-bar{height:4px;background:#1e1e2a;border-radius:4px;margin:16px 0 8px;overflow:hidden}
+.progress-fill{height:100%;width:0;background:linear-gradient(90deg,var(--accent),var(--accent2));border-radius:4px;transition:width .8s ease}
+.pager{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px}
+.page-indicator{font-size:12px;color:var(--muted);font-weight:600;letter-spacing:.04em}
+.dots{display:flex;gap:5px;justify-content:center;margin:6px 0 12px;flex-wrap:wrap}
+.dot{width:7px;height:7px;border-radius:50%;background:#2a2a38;transition:all .2s}
+.dot.active{background:var(--accent);width:18px;border-radius:4px}
+.slide-wrap{touch-action:pan-y;overflow:hidden;position:relative}
+.slide{display:none;animation:fadeIn .22s ease}
+.slide.active{display:block}
+@keyframes fadeIn{from{opacity:0;transform:translateX(10px)}to{opacity:1;transform:translateX(0)}}
+.score-big{font-size:64px;font-weight:800;line-height:1;background:linear-gradient(135deg,var(--accent),var(--accent2));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.score-label{color:var(--muted);font-size:13px;margin-top:6px}
+.summary{font-size:14px;line-height:1.55;color:var(--text);background:rgba(124,92,255,.08);border-radius:12px;padding:12px;border:1px solid rgba(124,92,255,.2);margin-top:14px;text-align:left}
+.live-badge{display:inline-block;font-size:11px;font-weight:700;background:rgba(0,212,170,.15);color:var(--accent2);padding:4px 10px;border-radius:999px;margin-bottom:12px}
+.live-badge.warn{background:rgba(255,176,32,.15);color:var(--warn)}
+.photo-stage{position:relative;width:100%;border-radius:14px;overflow:hidden;background:#0e0e16;border:1px solid var(--border);margin-bottom:12px;aspect-ratio:3/4;max-height:360px}
+.photo-stage canvas{position:absolute;inset:0;width:100%;height:100%;z-index:2;pointer-events:none}
+.photo-tag{position:absolute;z-index:3;top:10px;left:10px;font-size:11px;font-weight:700;padding:4px 8px;border-radius:8px;background:rgba(10,10,15,.75);color:var(--muted)}
+.zone-score-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:8px}
+.zone-title{font-size:18px;font-weight:700}
+.zone-scores{font-size:16px;white-space:nowrap}
+.score-current{font-weight:800}
+.score-potential{color:var(--accent2);margin-left:4px}
+.badge{font-size:10px;font-weight:700;text-transform:uppercase;padding:3px 8px;border-radius:999px;letter-spacing:.03em}
+.badge-strong{background:rgba(0,212,170,.15);color:var(--accent2)}
+.badge-ok{background:rgba(124,92,255,.15);color:var(--accent)}
+.badge-weak{background:rgba(255,176,32,.15);color:var(--warn)}
+.badge-critical{background:rgba(255,92,122,.15);color:var(--danger)}
+.zone-desc{font-size:13px;color:var(--muted);line-height:1.5;margin-bottom:12px}
+.section-label{font-size:11px;font-weight:700;color:var(--accent2);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;margin-top:4px}
+.advice-list{list-style:none;padding:0;margin:0 0 10px}
+.advice-list li{font-size:13px;line-height:1.45;padding:7px 0 7px 16px;position:relative;border-bottom:1px solid rgba(255,255,255,.04)}
+.advice-list li:last-child{border-bottom:none}
+.advice-list li::before{content:"→";position:absolute;left:0;color:var(--accent);font-weight:700}
+.daily-base li::before{content:"•";color:var(--muted)}
+.priority-item{font-size:14px;padding:10px 0;border-bottom:1px solid var(--border);line-height:1.4}
+.priority-item:last-child{border-bottom:none}
+.nav-bar{display:flex;gap:8px;margin-top:8px;position:sticky;bottom:8px}
+</style>
+</head>
+<body>
+<div class="container">
+<div class="header"><div class="logo">FaceTier</div><div class="subtitle">Жёсткий разбор лица</div></div>
+<div id="step-form">
+<div class="card">
+<label for="gender">Пол</label>
+<select id="gender"><option value="">Выбери</option><option value="male">Мужской</option><option value="female">Женский</option></select>
+<label for="age">Возраст (необязательно)</label>
+<input type="number" id="age" min="12" max="60" placeholder="Например 19"/>
+</div>
+<div class="card">
+<div class="card-title">Фото</div>
+<p class="hint">Анфас + профиль. Без фильтров, хорошее освещение = точнее разбор.</p>
+<div class="upload-row">
+<div class="upload-box" id="front-box" onclick="document.getElementById('front-input').click()"><div class="upload-icon">👤</div><div class="upload-label">Анфас<br/>(прямо)</div></div>
+<div class="upload-box" id="profile-box" onclick="document.getElementById('profile-input').click()"><div class="upload-icon">↔️</div><div class="upload-label">Профиль<br/>(бок)</div></div>
+</div>
+<input type="file" id="front-input" accept="image/*" hidden/>
+<input type="file" id="profile-input" accept="image/*" hidden/>
+</div>
+<button class="btn btn-primary" id="analyze-btn" disabled onclick="startAnalyze()">Получить полный разбор</button>
+</div>
+<div id="step-loading" class="hidden">
+<div class="card" style="text-align:center;padding:36px 18px">
+<div class="spinner"></div>
+<div class="load-title">Полный разбор лица</div>
+<div class="load-hint">Анализ занимает <b style="color:var(--text)">около минуты</b>.<br/>Не закрывай приложение.</div>
+<div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
+<div class="load-stages" id="load-stages">
+<div class="load-stage" data-s="0"><span class="dot-s"></span>Загрузка фото</div>
+<div class="load-stage" data-s="1"><span class="dot-s"></span>Поиск landmarks (MediaPipe)</div>
+<div class="load-stage" data-s="2"><span class="dot-s"></span>Метрики зон и скоринг</div>
+<div class="load-stage" data-s="3"><span class="dot-s"></span>Сборка daily / weekly плана</div>
+</div>
+</div>
+</div>
+<div id="step-result" class="hidden">
+<div class="pager"><span class="page-indicator" id="page-indicator">1 / 1</span></div>
+<div class="dots" id="dots"></div>
+<div class="slide-wrap" id="slide-wrap"></div>
+<div class="nav-bar">
+<button class="btn-nav" id="btn-prev" onclick="prevPage()">← Назад</button>
+<button class="btn-nav" id="btn-next" onclick="nextPage()">Далее →</button>
+</div>
+<button class="btn btn-ghost" style="margin-top:10px" onclick="resetForm()">Новый разбор</button>
+</div>
+</div>
+<script>
+const API='https://virtuous-light-production-9ed2.up.railway.app/api/analyze';
+const tg=window.Telegram&&window.Telegram.WebApp;
+if(tg){tg.ready();tg.expand();try{tg.setHeaderColor('#0a0a0f');tg.setBackgroundColor('#0a0a0f')}catch(e){}}
+let frontFile=null,profileFile=null,frontUrl=null,profileUrl=null,pages=[],pageIndex=0,lastData=null,loadTimer=null;
+function setupUpload(inputId,boxId,setFile,setUrl){const input=document.getElementById(inputId),box=document.getElementById(boxId);input.addEventListener('change',function(e){const file=e.target.files[0];if(!file)return;setFile(file);if(setUrl._prev)URL.revokeObjectURL(setUrl._prev);const url=URL.createObjectURL(file);setUrl._prev=url;setUrl(url);box.innerHTML='<img src="'+url+'" alt="preview"/>';box.classList.add('has-image');checkReady()})}setupUpload('front-input','front-box',function(f){frontFile=f},function(u){frontUrl=u});setupUpload('profile-input','profile-box',function(f){profileFile=f},function(u){profileUrl=u});
+function checkReady(){document.getElementById('analyze-btn').disabled=!(document.getElementById('gender').value&&frontFile&&profileFile)}document.getElementById('gender').addEventListener('change',checkReady);
+function startLoadUI(){var fill=document.getElementById('progress-fill');fill.style.width='4%';document.querySelectorAll('.load-stage').forEach(function(el){el.classList.remove('active','done')});function setStage(n){document.querySelectorAll('.load-stage').forEach(function(el){var s=+el.dataset.s;el.classList.toggle('done',s<n);el.classList.toggle('active',s===n)})}setStage(0);var steps=[{t:3000,stage:1,pct:18},{t:12000,stage:2,pct:45},{t:28000,stage:3,pct:72},{t:45000,stage:3,pct:88},{t:70000,stage:3,pct:95}];var start=Date.now();if(loadTimer)clearInterval(loadTimer);loadTimer=setInterval(function(){var elapsed=Date.now()-start;for(var i=0;i<steps.length;i++){if(elapsed>=steps[i].t){setStage(steps[i].stage);fill.style.width=steps[i].pct+'%'}}},400)}
+function stopLoadUI(){if(loadTimer){clearInterval(loadTimer);loadTimer=null}document.getElementById('progress-fill').style.width='100%';document.querySelectorAll('.load-stage').forEach(function(el){el.classList.remove('active');el.classList.add('done')})}
+async function startAnalyze(){var gender=document.getElementById('gender').value,age=document.getElementById('age').value;if(!gender||!frontFile||!profileFile)return;document.getElementById('step-form').classList.add('hidden');document.getElementById('step-loading').classList.remove('hidden');startLoadUI();var form=new FormData();form.append('front',frontFile);form.append('profile',profileFile);form.append('gender',gender);if(age)form.append('age',age);try{var res=await fetch(API,{method:'POST',body:form});if(!res.ok)throw new Error('Ошибка сервера: '+res.status);var data=await res.json();lastData=data;stopLoadUI();await new Promise(function(r){setTimeout(r,400)});buildPages(data);showPage(0);document.getElementById('step-loading').classList.add('hidden');document.getElementById('step-result').classList.remove('hidden');if(tg&&tg.HapticFeedback)tg.HapticFeedback.notificationOccurred('success')}catch(err){stopLoadUI();alert('Не удалось получить разбор: '+err.message);document.getElementById('step-loading').classList.add('hidden');document.getElementById('step-form').classList.remove('hidden')}}
+function badgeClass(level){return({strong:'badge-strong',ok:'badge-ok',weak:'badge-weak',critical:'badge-critical'})[level]||'badge-ok'}
+function badgeText(level){return({strong:'сильно',ok:'норм',weak:'слабо',critical:'критично'})[level]||(level||'')}
+function stageHtml(photo,overlayKey,tag){return'<div class="photo-stage" data-photo="'+photo+'" data-overlay="'+overlayKey+'"><div class="photo-tag">'+tag+'</div><canvas></canvas></div>'}
+function buildPages(data){pages=[];var mp=data.mp_available!==false;var badge=mp?'<div class="live-badge">ПОЛНЫЙ РАЗБОР</div>':'<div class="live-badge warn">ДЕМО-РЕЖИМ</div>';pages.push({html:'<div class="card" style="text-align:center">'+badge+'<div class="score-big">'+Number(data.overall_score).toFixed(1)+'</div><div class="score-label">Общая оценка / 10</div><div style="font-size:14px;color:var(--muted);margin-top:4px">Потенциал: <span style="color:var(--accent2);font-weight:700">'+Number(data.potential_score).toFixed(1)+'</span></div><div class="summary">'+(data.summary||data.message||'')+'</div></div>'+stageHtml('front','overall','Анфас · общий контур')});var plan=data.daily_plan||{base:[],focus_today:[],note:''};pages.push({html:'<div class="card"><div class="card-title">Делай каждый день</div><div class="section-label">База</div><ul class="advice-list daily-base">'+(plan.base||[]).map(function(x){return'<li>'+x+'</li>'}).join('')+'</ul><div class="section-label">Фокус по слабым зонам</div><ul class="advice-list">'+(plan.focus_today||[]).map(function(x){return'<li>'+x+'</li>'}).join('')+'</ul><p class="hint" style="margin:8px 0 0">'+(plan.note||'')+'</p></div><div class="card"><div class="card-title">Приоритеты</div>'+(data.priorities||[]).map(function(p){return'<div class="priority-item">→ '+p+'</div>'}).join('')+'</div>'});(data.zones||[]).forEach(function(z){var photo=z.photo||(['jaw','chin','midface'].indexOf(z.id)>=0?'profile':'front');var key=z.overlay_key||z.id;var tag=(photo==='profile'?'Профиль':'Анфас')+' · '+z.name;pages.push({photo:photo,overlayKey:key,html:stageHtml(photo,key,tag)+'<div class="card"><div class="zone-score-row"><div class="zone-title">'+z.name+'</div><div style="display:flex;align-items:center;gap:8px"><span class="badge '+badgeClass(z.level)+'">'+badgeText(z.level)+'</span><div class="zone-scores"><span class="score-current">'+Number(z.score).toFixed(1)+'</span><span class="score-potential">→ '+Number(z.potential).toFixed(1)+'</span></div></div></div><div class="zone-desc">'+(z.description||'')+'</div><div class="section-label">Каждый день</div><ul class="advice-list">'+(z.daily||[]).map(function(a){return'<li>'+a+'</li>'}).join('')+'</ul><div class="section-label">На неделе</div><ul class="advice-list">'+(z.weekly||[]).map(function(a){return'<li>'+a+'</li>'}).join('')+'</ul></div>'})});document.getElementById('dots').innerHTML=pages.map(function(_,i){return'<div class="dot'+(i===0?' active':'')+'" data-i="'+i+'"></div>'}).join('');document.querySelectorAll('.dot').forEach(function(d){d.onclick=function(){showPage(+d.dataset.i)}})}
+function showPage(i){if(i<0||i>=pages.length)return;pageIndex=i;var wrap=document.getElementById('slide-wrap');wrap.innerHTML='<div class="slide active">'+pages[i].html+'</div>';document.getElementById('page-indicator').textContent=(i+1)+' / '+pages.length;document.querySelectorAll('.dot').forEach(function(d,di){d.classList.toggle('active',di===i)});document.getElementById('btn-prev').disabled=i===0;document.getElementById('btn-next').disabled=false;document.getElementById('btn-next').textContent=i===pages.length-1?'Готово':'Далее →';if(i===pages.length-1){document.getElementById('btn-next').onclick=function(){}}else{document.getElementById('btn-next').onclick=nextPage}requestAnimationFrame(function(){var stage=wrap.querySelector('.photo-stage');if(stage)drawOverlay(stage,stage.dataset.photo,stage.dataset.overlay)})}
+function prevPage(){showPage(pageIndex-1)}function nextPage(){if(pageIndex<pages.length-1)showPage(pageIndex+1)}
+(function setupSwipe(){var el=document.getElementById('slide-wrap'),x0=null;el.addEventListener('touchstart',function(e){x0=e.changedTouches[0].clientX},{passive:true});el.addEventListener('touchend',function(e){if(x0===null)return;var dx=e.changedTouches[0].clientX-x0;x0=null;if(Math.abs(dx)<40)return;if(dx<0)nextPage();else prevPage()},{passive:true})})();
+function drawOverlay(stage,photo,overlayKey){var canvas=stage.querySelector('canvas');if(!canvas)return;var url=photo==='profile'?profileUrl:frontUrl;if(!url)return;var img=new Image();img.onload=function(){var rect=stage.getBoundingClientRect(),cw=Math.floor(rect.width),ch=Math.floor(rect.height);canvas.width=cw;canvas.height=ch;var ctx=canvas.getContext('2d');var scale=Math.max(cw/img.width,ch/img.height);var dw=img.width*scale,dh=img.height*scale;var ox=(cw-dw)/2,oy=(ch-dh)/2;ctx.clearRect(0,0,cw,ch);ctx.drawImage(img,ox,oy,dw,dh);if(photo==='profile'){ctx.save();var colors={jaw:'rgba(255,176,32,0.22)',chin:'rgba(0,212,170,0.22)',midface:'rgba(124,92,255,0.22)'};var bands={jaw:[0.42,0.70],chin:[0.64,0.86],midface:[0.20,0.46]};var band=bands[overlayKey]||bands.jaw;var y1=Math.max(0,oy+band[0]*dh);var y2=Math.min(ch,oy+band[1]*dh);if(y2<=y1){ctx.restore();return}var x1=Math.max(0,ox+dw*0.12);var x2=Math.min(cw,ox+dw*0.88);var bw=x2-x1;ctx.fillStyle=colors[overlayKey]||'rgba(124,92,255,0.18)';ctx.fillRect(x1,y1,bw,y2-y1);var stroke=overlayKey==='jaw'?'#ffb020':overlayKey==='chin'?'#00d4aa':'#7c5cff';ctx.strokeStyle=stroke;ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(x1+4,y1);ctx.lineTo(x2-4,y1);ctx.moveTo(x1+4,y2);ctx.lineTo(x2-4,y2);ctx.stroke();ctx.fillStyle=stroke;ctx.font='600 11px -apple-system,BlinkMacSystemFont,sans-serif';ctx.textBaseline='top';var label=overlayKey==='jaw'?'челюсть':overlayKey==='chin'?'подбородок':'midface';ctx.fillText(label,x1+8,y1+6);ctx.restore();return}var overlays=(lastData&&lastData.overlays&&lastData.overlays.front)||{};var ov=overlays[overlayKey]||overlays.overall;if(!ov)return;function toXY(p){return[ox+p[0]*dw,oy+p[1]*dh]}var color=ov.color||'#7c5cff';ctx.strokeStyle=color;ctx.fillStyle=color;ctx.lineWidth=2;if(ov.kind==='polyline'&&ov.points&&ov.points.length>1){ctx.beginPath();ov.points.forEach(function(p,i){var xy=toXY(p);if(i===0)ctx.moveTo(xy[0],xy[1]);else ctx.lineTo(xy[0],xy[1])});ctx.closePath();ctx.globalAlpha=0.9;ctx.stroke();ctx.globalAlpha=0.12;ctx.fill();ctx.globalAlpha=1}if(ov.kind==='points'||ov.kind==='points+lines'){(ov.points||[]).forEach(function(p){var xy=toXY(p);ctx.beginPath();ctx.arc(xy[0],xy[1],3.5,0,Math.PI*2);ctx.fill()})}if(ov.kind==='points+lines'&&ov.lines){ctx.lineWidth=2.2;ov.lines.forEach(function(line){if(!line||line.length<2)return;ctx.beginPath();line.forEach(function(p,i){var xy=toXY(p);if(i===0)ctx.moveTo(xy[0],xy[1]);else ctx.lineTo(xy[0],xy[1])});ctx.stroke()})}};img.src=url}
+function resetForm(){frontFile=null;profileFile=null;frontUrl=null;profileUrl=null;lastData=null;pages=[];pageIndex=0;document.getElementById('gender').value='';document.getElementById('age').value='';document.getElementById('front-box').innerHTML='<div class="upload-icon">👤</div><div class="upload-label">Анфас<br/>(прямо)</div>';document.getElementById('profile-box').innerHTML='<div class="upload-icon">↔️</div><div class="upload-label">Профиль<br/>(бок)</div>';document.getElementById('front-box').classList.remove('has-image');document.getElementById('profile-box').classList.remove('has-image');document.getElementById('analyze-btn').disabled=true;document.getElementById('step-result').classList.add('hidden');document.getElementById('step-form').classList.remove('hidden')}
+</script>
+</body>
+</html>
