@@ -6,7 +6,7 @@ import shutil
 from pathlib import Path
 import tempfile
 
-app = FastAPI(title="FaceTier API", version="0.6.0")
+app = FastAPI(title="FaceTier API", version="0.7.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -22,7 +22,7 @@ UPLOAD_DIR.mkdir(exist_ok=True)
 
 @app.get("/")
 async def root():
-    return {"status": "ok", "service": "FaceTier API", "version": "0.6.0"}
+    return {"status": "ok", "service": "FaceTier API", "version": "0.7.0"}
 
 
 @app.get("/health")
@@ -32,7 +32,7 @@ async def health():
 
 @app.get("/debug")
 async def debug():
-    info = {"version": "0.6.0"}
+    info = {"version": "0.7.0"}
     try:
         from app.analysis import face_analyzer as fa
         info["mp_available"] = fa.MP_AVAILABLE
@@ -83,53 +83,44 @@ async def analyze_face(
             from app.analysis.face_analyzer import FaceAnalyzer
             analyzer = FaceAnalyzer()
             analysis = analyzer.analyze(
-                str(front_path), str(profile_path), gender=gender, age=age,
+                str(front_path),
+                str(profile_path),
+                gender=gender,
+                age=age,
             )
-            scores = analysis.get("scores", {})
+            scores = analysis.get("scores") or {}
+            metrics = analysis.get("metrics") or {}
             overall = analysis.get("overall_score", 6.0)
-            potential = analysis.get("potential_score", 7.5)
-            metrics = analysis.get("metrics", {})
-            mp_ok = analysis.get("mp_available", False)
-            warning = analysis.get("warning")
+            potential = analysis.get("potential_score", overall + 1.0)
 
             zones = _build_full_zones(scores, metrics, gender)
             daily = _build_daily_plan(zones, gender)
             priorities = _build_priorities(scores)
-
-            msg = (
-                "Полный разбор выполнен через MediaPipe"
-                if mp_ok
-                else f"Демо-режим: {warning or 'MediaPipe недоступен'}"
-            )
+            summary = _build_summary(overall, potential, priorities, gender)
 
             for z in zones:
-                zid = z.get("id")
+                zid = z["id"]
                 z["photo"] = "profile" if zid in ("jaw", "chin", "midface") else "front"
                 z["overlay_key"] = "eyes" if zid == "eyes" else zid
 
-            result = {
+            return {
                 "session_id": session_id,
                 "overall_score": overall,
                 "potential_score": potential,
                 "gender": gender,
                 "age": age,
-                "mp_available": mp_ok,
-                "metrics": metrics,
+                "mp_available": analysis.get("mp_available", False),
                 "overlays": analysis.get("overlays") or {},
                 "profile_mesh": analysis.get("profile_mesh", False),
                 "zones": zones,
                 "daily_plan": daily,
                 "priorities": priorities,
-                "summary": _build_summary(overall, potential, priorities, gender),
-                "message": msg,
+                "summary": summary,
+                "metrics": metrics,
+                "message": "OK",
             }
-            if warning:
-                result["warning"] = warning
         except Exception as e:
-            result = _demo_result(session_id, gender, age, error=str(e))
-
-        return JSONResponse(result)
-
+            return _demo_result(session_id, gender, age, error=str(e))
     finally:
         try:
             shutil.rmtree(session_dir, ignore_errors=True)
@@ -137,151 +128,75 @@ async def analyze_face(
             pass
 
 
-def _level(score: float) -> str:
-    if score >= 8.0:
-        return "strong"
-    if score >= 6.5:
-        return "ok"
-    if score >= 5.0:
-        return "weak"
-    return "critical"
-
-
 def _build_full_zones(scores: dict, metrics: dict, gender: str) -> list:
-    canthal = float(metrics.get("canthal_tilt", 0))
-    midface_r = float(metrics.get("midface_ratio", 1.0))
-    jaw_r = float(metrics.get("jaw_to_cheek", 0.85))
-    sym_err = float(metrics.get("symmetry_error", 5.0))
-
     def zone(zid, name, score_key, potential_extra, desc_fn, daily_fn, weekly_fn):
         sc = float(scores.get(score_key, 6.0))
-        pot = min(9.5, sc + potential_extra)
         return {
-            "id": zid, "name": name, "score": round(sc, 1), "potential": round(pot, 1),
-            "level": _level(sc), "description": desc_fn(sc),
-            "daily": daily_fn(sc), "weekly": weekly_fn(sc),
+            "id": zid,
+            "name": name,
+            "score": sc,
+            "potential": round(min(9.8, sc + potential_extra), 1),
+            "description": desc_fn(sc, metrics),
+            "daily": daily_fn(sc),
+            "weekly": weekly_fn(sc),
         }
 
-    eyes_desc = lambda s: (
-        f"Canthal tilt {canthal:+.1f}. "
-        + ("Сильный положительный наклон — hunter eyes vibe." if canthal >= 4
-           else "Положительный наклон, глаза выглядят живее." if canthal >= 1.5
-           else "Нейтральный/слабый наклон — взгляд может казаться более усталым." if canthal >= -1
-           else "Отрицательный canthal tilt — глаза визуально тяжелее и закрытее.")
+    eyes_desc = lambda s, m: (
+        f"Canthal tilt ~{m.get('canthal_tilt', 0):.1f}°. "
+        + ("Хороший наклон, держи форму." if s >= 7.5 else "Есть куда расти — угол и раскрытие." if s >= 5.5 else "Слабый canthal / форма глаз тянет вниз.")
     )
     eyes_daily = lambda s: (
-        ["Сон 7–9 часов — отёки убивают взгляд сильнее, чем ты думаешь",
-         "Холодный компресс / охлаждённые ложки 2–3 мин утром под глаза",
-         "Не тереть глаза, не спать лицом в подушку",
-         "Форма бровей: чуть приподнятый хвост визуально усиливает canthal"]
-        if s < 7 else
-        ["Держи режим сна — это твоё главное преимущество",
-         "Лёгкий холод утром, если есть склонность к отёкам",
-         "Не перегружай нижнее веко косметикой/фильтрами"]
+        ["Сон 7–8ч, холодные компрессы утром", "Лёгкий массаж периорбитальной зоны", "Не тереть глаза, снижай отёки"]
+        if s < 7
+        else ["Поддерживай сон и гигиену кожи вокруг глаз", "Защита от UV"]
     )
-    eyes_weekly = lambda s: (
-        ["Раз в неделю — маска/патчи под глаза (кофеин или пептиды)",
-         "Проверь, не опускаются ли брови (это визуально портит tilt)"]
-        if s < 7.5 else ["Поддерживающий уход под глаза 1–2 раза в неделю"]
-    )
+    eyes_weekly = lambda s: ["Фотоконтроль canthal раз в 2 недели", "Если сильный hooding — консультация"]
 
-    mid_desc = lambda s: (
-        f"Соотношение midface {midface_r:.2f}. "
-        + ("Компактный midface — сильный показатель." if 0.95 <= midface_r <= 1.2
-           else "Midface чуть вытянут — лицо может казаться длиннее." if midface_r > 1.2
-           else "Midface короткий/сжатый — следи за гармонией с нижней третью.")
+    mid_desc = lambda s, m: (
+        f"Midface ratio ~{m.get('midface_ratio', 1):.2f}. "
+        + ("Баланс ок." if 0.95 <= m.get('midface_ratio', 1) <= 1.25 else "Средняя треть смещена — работай над объёмом и привычками.")
     )
     mid_daily = lambda s: [
-        "Осанка: подбородок чуть назад и вниз, шея длинная — меняет восприятие midface",
-        "Жевание (жвачка / жевательный тренинг) 10–15 мин — тонус masseter",
-        "Не запрокидывай голову на фото и в зеркале — это искажает midface",
+        "Mewing: язык к нёбу весь день",
         "Дыши носом, язык к нёбу (mewing) — базовый daily",
+        "Жуй твёрдую пищу, меньше жидкости перед сном",
     ]
-    mid_weekly = lambda s: [
-        "Сравни фото анфас раз в 2 недели при одинаковом свете",
-        "Если lower third слабый — приоритет челюсти/подбородку, не тянуть midface отдельно",
-    ]
+    mid_weekly = lambda s: ["Проверка осанки и дыхания", "Фото midface анфас + 3/4"]
 
-    jaw_desc = lambda s: (
-        f"Соотношение челюсть/скулы ~{jaw_r:.2f}. "
-        + ("Сильная, читаемая челюсть." if s >= 7.5
-           else "Средняя челюсть — есть запас по углу и ширине." if s >= 5.5
-           else "Челюсть слабая/сглаженная — главный рычаг для общей оценки.")
+    jaw_desc = lambda s, m: (
+        f"Jaw/cheek ~{m.get('jaw_to_cheek', 0.85):.2f}. "
+        + ("Челюсть заметная." if s >= 7 else "Челюсть слабая — приоритет №1." if s < 5.5 else "Есть потенциал для угла и ширины.")
     )
     jaw_daily = lambda s: [
-        "Жевательная нагрузка: жвачка (без сахара) 15–20 мин или жевательный тренинг",
-        "Язык к нёбу весь день (mewing) — без силы, просто контакт",
-        "Не дыши ртом — рот закрыт в покое",
-        "Поза: уши над плечами, подбородок не вперёд",
+        "Жевательная нагрузка (жвачка / твёрдая еда) 20–40 мин",
+        "Neck curls / chin tucks 2×15",
+        "Mewing + правильная осанка",
     ]
-    jaw_weekly = lambda s: (
-        ["Прогрессия жевательной нагрузки (осторожно, без боли в суставе)",
-         "Фото профиля раз в неделю при одном угле и свете",
-         "Если жир на лице — дефицит калорий важнее любых упражнений"]
-        if s < 7 else ["Поддерживай жевательную нагрузку и lean face"]
-    )
+    jaw_weekly = lambda s: ["Фото профиля и анфаса челюсти", "Прогресс по углу gonial"]
 
-    cheek_desc = lambda s: (
-        "Скулы читаются, есть структура." if s >= 7
-        else "Скулы средние — можно усилить через lean face и свет." if s >= 5.5
-        else "Скулы слабо выражены — чаще всего помогает снижение подкожного жира + угол света."
-    )
-    cheek_daily = lambda s: [
-        "Lean face: если есть лишний жир — держи лёгкий дефицит",
-        "Соль и алкоголь вечером = отеки и плоские скулы утром",
-        "Пей воду равномерно, не залпом на ночь",
-        "Причёска/объём сверху не должен спорить со скулами",
-    ]
-    cheek_weekly = lambda s: [
-        "Контроль веса и фото при одном освещении",
-        "Не гонись за западанием щёк через экстремальный дефицит — будет выглядеть хуже",
-    ]
+    cheek_desc = lambda s, m: "Скулы читаются по ширине и проекции." if s >= 6.5 else "Скулы слабые — визуал + объём."
+    cheek_daily = lambda s: ["Массаж скул вверх", "Не спать лицом в подушку"]
+    cheek_weekly = lambda s: ["Контроль жира в лице"]
 
-    chin_desc = lambda s: (
-        "Подбородок держит нижнюю треть." if s >= 7
-        else "Подбородок средний — следи, чтобы не терялся в шее." if s >= 5.5
-        else "Слабый/скошенный подбородок сильно бьёт по профилю и гармонии."
-    )
+    chin_desc = lambda s, m: "Подбородок в балансе." if s >= 7 else "Подбородок слабый / рецессивный — приоритет."
     chin_daily = lambda s: [
-        "Осанка и mewing — подбородок не должен уезжать вперёд от привычки",
-        "Не прижимай подбородок к шее в фото и селфи",
-        "Если двойной подбородок — lean + осанка важнее упражнений",
-    ]
-    chin_weekly = lambda s: [
-        "Фото строгого профиля раз в неделю",
+        "Chin tucks 3×15",
+        "Не выдвигать голову вперёд",
         "При сильном рецессе подбородка долгосрочно рассматривают импланты/гениопластику — это уже не daily",
     ]
+    chin_weekly = lambda s: ["Фото профиля подбородка"]
 
-    sym_desc = lambda s: (
-        f"Ошибка симметрии (грубо) {sym_err:.1f}. "
-        + ("Симметрия хорошая." if s >= 7.5
-           else "Есть заметная асимметрия — почти у всех, но её можно визуально сгладить." if s >= 5.5
-           else "Асимметрия сильная — часть из этого привычки (жевание на одну сторону, сон).")
-    )
+    sym_desc = lambda s, m: f"Асимметрия ~{m.get('symmetry_error', 5):.1f}%. " + ("В пределах нормы." if s >= 7 else "Заметный перекос — привычки и осанка.")
     sym_daily = lambda s: [
-        "Жуй равномерно обеими сторонами",
-        "Не спи всегда на одном боку лицом в подушку",
-        "Проверь, не поднимаешь ли одну бровь/уголок рта привычкой",
-    ]
-    sym_weekly = lambda s: [
-        "Сравни зеркальные фото (flip) раз в 2 недели",
+        "Жуй обеими сторонами",
+        "Спи ровно, не на одном боку постоянно",
         "Сильную скелетную асимметрию daily не исправит — только визуал и привычки",
     ]
+    sym_weekly = lambda s: ["Сравни лево/право на фото"]
 
-    harm_desc = lambda s: (
-        "Части лица согласованы между собой." if s >= 7.5
-        else "Гармония средняя — отдельные зоны тянут вниз общую оценку." if s >= 5.5
-        else "Дисбаланс зон: сначала закрывай самые слабые места, не всё сразу."
-    )
-    harm_daily = lambda s: [
-        "Один главный фокус на день из приоритетов ниже — не распыляйся",
-        "Сон, вода, осанка, закрытый рот в покое — база для всего лица",
-        "Одинаковый свет и ракурс в контрольных фото",
-    ]
-    harm_weekly = lambda s: [
-        "Раз в неделю: 3 фото (анфас, 45°, профиль) при одном свете",
-        "Сверяйся с приоритетами — сначала weak/critical зоны",
-    ]
+    harm_desc = lambda s, m: "Гармония зон." if s >= 7 else "Зоны спорят друг с другом — выравнивай слабые."
+    harm_daily = lambda s: ["Общая дисциплина: сон, осанка, mewing", "Не читерь одну зону в ущерб другим"]
+    harm_weekly = lambda s: ["Полный разбор раз в 2–4 недели"]
 
     return [
         zone("eyes", "Глаза / Canthal", "eyes", 1.1, eyes_desc, eyes_daily, eyes_weekly),
@@ -295,11 +210,12 @@ def _build_full_zones(scores: dict, metrics: dict, gender: str) -> list:
 
 
 def _build_daily_plan(zones: list, gender: str) -> dict:
+    """Собрать общий daily plan из самых слабых зон + база."""
     base = [
-        "Сон 7–9 часов (без этого лицо плывёт)",
-        "Рот закрыт в покое, дыхание носом, язык к нёбу",
-        "Осанка: уши над плечами, подбородок не выпирает вперёд",
-        "Вода в течение дня, меньше соли и алкоголя вечером",
+        "Сон 7–8 часов",
+        "Mewing + носовое дыхание весь день",
+        "Вода, меньше сахара и алкоголя",
+        "Осанка: уши над плечами, язык к нёбу",
     ]
     weak = sorted(zones, key=lambda z: z["score"])[:3]
     focus = []
@@ -307,6 +223,7 @@ def _build_daily_plan(zones: list, gender: str) -> dict:
         focus.append(f"{z['name']}: {z['daily'][0]}")
         if len(z["daily"]) > 1:
             focus.append(f"{z['name']}: {z['daily'][1]}")
+
     return {
         "base": base,
         "focus_today": focus[:6],
@@ -339,8 +256,10 @@ def _build_priorities(scores: dict) -> list:
 def _build_summary(overall: float, potential: float, priorities: list, gender: str) -> str:
     gap = potential - overall
     tone = (
-        "Сильная база. Дальше — точечная доводка и дисциплина." if overall >= 7.5
-        else "Средний уровень. Рост реально упирается в 2–3 слабые зоны и daily-привычки." if overall >= 5.5
+        "Сильная база. Дальше — точечная доводка и дисциплина."
+        if overall >= 7.5
+        else "Средний уровень. Рост реально упирается в 2–3 слабые зоны и daily-привычки."
+        if overall >= 5.5
         else "Сейчас лицо тянут вниз слабые зоны. Не распыляйся: база + топ-приоритеты."
     )
     top = priorities[0] if priorities else "дисциплина"
@@ -352,16 +271,26 @@ def _build_summary(overall: float, potential: float, priorities: list, gender: s
 
 def _demo_result(session_id, gender, age, error=None):
     scores = {
-        "canthal_tilt": 6.5, "eyes": 6.5, "midface": 6.0, "jaw": 5.8,
-        "cheekbones": 6.3, "chin": 6.0, "symmetry": 6.8, "harmony": 6.2,
+        "canthal_tilt": 6.5,
+        "eyes": 6.5,
+        "midface": 6.0,
+        "jaw": 5.8,
+        "cheekbones": 6.3,
+        "chin": 6.0,
+        "symmetry": 6.8,
+        "harmony": 6.2,
     }
     zones = _build_full_zones(scores, {"canthal_tilt": 0, "midface_ratio": 1.0, "jaw_to_cheek": 0.85, "symmetry_error": 5}, gender)
     return {
-        "session_id": session_id, "overall_score": 6.3, "potential_score": 7.7,
-        "gender": gender, "age": age, "mp_available": False,
-        "zones": zones, "daily_plan": _build_daily_plan(zones, gender),
+        "session_id": session_id,
+        "overall_score": 6.3,
+        "potential_score": 7.7,
+        "gender": gender,
+        "age": age,
+        "mp_available": False,
+        "zones": zones,
+        "daily_plan": _build_daily_plan(zones, gender),
         "priorities": _build_priorities(scores),
         "summary": _build_summary(6.3, 7.7, _build_priorities(scores), gender),
         "message": f"Демо-режим. Ошибка анализа: {error}" if error else "Демо-режим",
-        "overlays": {}, "profile_mesh": False,
     }
